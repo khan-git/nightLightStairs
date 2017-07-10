@@ -1,303 +1,348 @@
 #include <Arduino.h>
 #include "FastLED.h"
 
-// #include <Adafruit_NeoPixel.h>
-// #include <SPI.h>
-// #include <WiFi101.h>
-
+#if 0
+// MKR1000
 #define RED_BUTTON 7
 #define BLUE_BUTTON 8
-#define NUMBER_OF_LEDS 10
-CRGB leds[10];
+#define STRIP_0_PIN 0
+#define STRIP_1_PIN 1
+#define STRIP_2_PIN 2
+#define STRIP_3_PIN 3
+#define STRIP_4_PIN 4
+#define MODE_STRIP 0
+#define OPTIONS_STRIP 4
+#else
+// Arduino mega
+#define RED_BUTTON 2
+#define BLUE_BUTTON 3
+#define STRIP_0_PIN 22
+#define STRIP_1_PIN 24
+#define STRIP_2_PIN 26
+#define STRIP_3_PIN 28
+#define STRIP_4_PIN 30
+#define MODE_STRIP 0
+#define OPTIONS_STRIP 0
+#endif
 
-// Stairs from top to bottom
-Adafruit_NeoPixel strip0 = Adafruit_NeoPixel(NUMBER_OF_LEDS, 0, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip1 = Adafruit_NeoPixel(NUMBER_OF_LEDS, 1, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip2 = Adafruit_NeoPixel(NUMBER_OF_LEDS, 2, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip3 = Adafruit_NeoPixel(NUMBER_OF_LEDS, 3, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel strip4 = Adafruit_NeoPixel(NUMBER_OF_LEDS, 4, NEO_GRB + NEO_KHZ800);
+#define NUM_LEDS 10
+
+CRGB ledArray[5][NUM_LEDS];
 
 volatile boolean redPushed = false;
 volatile boolean bluePushed = false;
+volatile boolean redFirst = false;
 
-#define MODE_FIRST 0
-#define MODE_NORMAL 0
-#define MODE_COLOUR 1
-#define MODE_BRIGHTNESS 2
-#define MODE_DISCO 3
-#define MODE_GAME 4
-#define MODE_LAST 4
+volatile boolean ledState = false;
+volatile int ledBrightness = 25;
 
-#define BRIGHTNESSLVL_4 100
-#define BRIGHTNESSLVL_3 75
-#define BRIGHTNESSLVL_2 50
-#define BRIGHTNESSLVL_1 25
-
-volatile int currentBrightness = BRIGHTNESSLVL_2;
-
-volatile int currentMode = MODE_NORMAL;
-
-Adafruit_NeoPixel *modeStrip = &strip4;
-Adafruit_NeoPixel *menuStrip = &strip4;
-
-Adafruit_NeoPixel *allLedsArr[] = {&strip0, &strip1, &strip2, &strip3, &strip4};
-Adafruit_NeoPixel **low2HighArr = allLedsArr;
-Adafruit_NeoPixel *high2LowArr[] = {&strip4, &strip3, &strip2, &strip1, &strip0};
-volatile int ledArraySize = 0;
-boolean ledState = false;
-
-//
-// Slowly get each strip up to brightness.
-//
-void setBrightnessSequence(Adafruit_NeoPixel *strips[], int numStrips, int brightness, int seconds) {
-  for(int i=0; i < numStrips; i++) {
-    ledsOn(strips[i], 10);
-    int bri = 1;
-    while(bri++ < brightness) {
-      strips[i]->setBrightness(bri);
-      strips[i]->show();
-      delay(seconds);
-    }
-  }
-}
-
-//
-// Slowly reduce brightness for each strip.
-//
-void unsetBrightnessSequence(Adafruit_NeoPixel *strips[], int numStrips, int seconds) {
-  for(int i=0; i < numStrips; i++) {
-    uint16_t brightness = strips[i]->getBrightness();
-    while(brightness-- > 1) {
-      strips[i]->setBrightness(brightness);
-      strips[i]->show();
-      delay(seconds);
-    }
-    ledsOff(strips[i], 10);
-  }
-}
-
-void ledsOff(Adafruit_NeoPixel *strip, int leds) {
-    for(int j=0; j < leds; j++) {
-      strip->setPixelColor(j , strip->Color(0,0,0));
-    }
-    strip->show();
-}
-
-void ledsOn(Adafruit_NeoPixel *strip, int leds) {
-    for(int j=0; j < leds; j++) {
-      strip->setPixelColor(j , strip->Color(255,255,255));
-    }
-    strip->show();
-}
-
-void setup() {
-  Serial.begin(115200);
-  Serial.println("Setup begin");
-  ledArraySize = sizeof(low2HighArr)/sizeof(*low2HighArr);
-  pinMode(RED_BUTTON, INPUT_PULLUP);
-  attachInterrupt(RED_BUTTON, redPushedInt, LOW);
-
-  pinMode(BLUE_BUTTON, INPUT_PULLUP);
-  attachInterrupt(BLUE_BUTTON, bluePushedInt, LOW);
-  Serial.println("Leds");
-
-  stripSetup(&strip0, NUMBER_OF_LEDS);
-  stripSetup(&strip1, NUMBER_OF_LEDS);
-  stripSetup(&strip2, NUMBER_OF_LEDS);
-  stripSetup(&strip3, NUMBER_OF_LEDS);
-  stripSetup(&strip4, NUMBER_OF_LEDS);
-  Serial.println("Setup done");
-}
-
-//
-// Initiate strip
-//
-void stripSetup(Adafruit_NeoPixel *strip, int leds) {
-  strip->begin();
-  strip->setBrightness(currentBrightness);
-  toggleOnFirstLeds(strip, leds);
-  delay(300);
-  toggleOnFirstLeds(strip, leds);
-}
-
-//
-// Turn all leds off
-//
-void allLedsOff()
-{
-  int i = 0;
-  for(; i < 5; i++)
-  {
-    ledsOff(low2HighArr[i], NUMBER_OF_LEDS);
-  }
-}
-
-//
-// Toggle on and off
-//
-void toggleOnFirstLeds(Adafruit_NeoPixel *strip, int leds) {
-  ledsOn(strip, leds);
-  delay(300);
-  ledsOff(strip, leds);
-}
-
-void toggleOffFirstLeds(Adafruit_NeoPixel *strip, int leds) {
-  ledsOff(strip, leds);
-  delay(300);
-  ledsOn(strip, leds);
-}
-
-//
-// Light mode leds
-//
-void setMode(Adafruit_NeoPixel *modeStrip, int mode)
-{
-  allLedsOff();
-  ledsOn(modeStrip, mode+1);
-  Serial.print("Mode ");
-  Serial.println(mode);
-}
-int colors[4][3] = {{255,0,0},{0,255,0},{0,0,255},{0,255,255}};
-void colourMode(Adafruit_NeoPixel *ledStrips[], Adafruit_NeoPixel *menuStrip)
-{
-  redPushed = false;
-  bluePushed = false;
-  while(!bluePushed)
-  {
-    if(redPushed)
-    {
-      // Do next colour
-      redPushed = false;
-    }
-  }
-}
-
-void brightnessMode(Adafruit_NeoPixel *ledStrips[], Adafruit_NeoPixel *menuStrip)
-{
-  int ledPos = currentBrightness/25;
-  menuStrip->setBrightness(currentBrightness);
-  ledsOff(menuStrip, NUMBER_OF_LEDS);
-  ledsOn(menuStrip, ledPos);
-  Serial.println("Enter brightness mode");
-  delay(5);
-  redPushed = false;
-  bluePushed = false;
-  while(!bluePushed)
-  {
-    if(redPushed)
-    {
-      switch(currentBrightness)
-      {
-        case BRIGHTNESSLVL_1:
-          currentBrightness = BRIGHTNESSLVL_2;
-          ledPos = 2;
-          break;
-        case BRIGHTNESSLVL_2:
-          currentBrightness = BRIGHTNESSLVL_3;
-          ledPos = 3;
-          break;
-        case BRIGHTNESSLVL_3:
-          currentBrightness = BRIGHTNESSLVL_4;
-          ledPos = 4;
-          break;
-        case BRIGHTNESSLVL_4:
-        default:
-          currentBrightness = BRIGHTNESSLVL_1;
-          ledPos = 1;
-          break;
-      }
-      menuStrip->setBrightness(currentBrightness);
-      ledsOff(menuStrip, NUMBER_OF_LEDS);
-      ledsOn(menuStrip, ledPos);
-      redPushed = false;
-    }
-  }
-  toggleOffFirstLeds(menuStrip, ledPos);
-  delay(300);
-  Serial.println("Exit brightness mode");
-}
-
-
-//
-// Main loop
-//
-void loop() {
-  uint32_t point;
-  if( redPushed == true)
-  {
-    Serial.println("Enter settings");
-    Serial.println(ledArraySize);
-    setMode(modeStrip, currentMode);
-    redPushed = false;
-    while(true)
-    {
-      if(redPushed)
-      {
-        point = millis();
-        currentMode++;
-        if(currentMode > MODE_LAST)
-        {
-          currentMode = MODE_FIRST;
-        }
-        setMode(modeStrip, currentMode);
-        redPushed = false;
-        Serial.println(millis()-point);
-      }
-      else if (bluePushed)
-      {
-        switch(currentMode)
-        {
-          case MODE_COLOUR:
-            colourMode(allLedsArr, menuStrip);
-            break;
-          case MODE_BRIGHTNESS:
-            brightnessMode(allLedsArr, menuStrip);
-            break;
-          case MODE_DISCO:
-            break;
-          case MODE_GAME:
-            break;
-          default:
-            break;
-        }
-        break;
-      }
-    }
-    allLedsOff();
-    redPushed = false;
-    bluePushed = false;
-    Serial.println("Exit settings");
-  }
-  else if(bluePushed)
-  {
-    bluePushed = false;
-    if(ledState)
-    {
-      ledsOff(&strip4, 1);
-    }
-    else
-    {
-      ledsOn(&strip4, 1);
-    }
-    ledState = !ledState;
-    Serial.print("Ledstate ");
-    Serial.println(ledState);
-  }
-}
+CRGB::HTMLColorCode currentColour;
 
 //
 // Interrupt routines
 //
 void redPushedInt() {
   redPushed = true;
-  // while(digitalRead(RED_BUTTON) == LOW)
-  // {
-  // }
+  while(digitalRead(RED_BUTTON) == LOW)
+  {
+    if (digitalRead(BLUE_BUTTON) == LOW)
+    {
+      bluePushed = true;
+      redFirst = true;
+    }
+  }
 }
 
 void bluePushedInt() {
   bluePushed = true;
-  // while(digitalRead(BLUE_BUTTON) == LOW)
-  // {
-  // }
+  while(digitalRead(BLUE_BUTTON) == LOW)
+  {
+    if (digitalRead(RED_BUTTON) == LOW)
+    {
+      redPushed = true;
+      redFirst = false;
+    }
+  }
+}
+
+void readButtons()
+{
+    if(digitalRead(RED_BUTTON) == LOW) {
+      redPushed = true;
+      while(digitalRead(RED_BUTTON) == LOW)
+      {
+        if(digitalRead(BLUE_BUTTON) == LOW) {
+          redFirst = true;
+          bluePushed = true;
+        }
+        delay(85);
+      }
+    }
+    if(digitalRead(BLUE_BUTTON) == LOW) {
+      bluePushed = true;
+      while(digitalRead(BLUE_BUTTON) == LOW)
+      {
+        if(digitalRead(RED_BUTTON) == LOW) {
+          redFirst = false;
+          redPushed = true;
+        }
+        delay(85);
+      }
+    }
+}
+
+void setColorRow(CRGB *led, int num_leds, CRGB::HTMLColorCode colour)
+{
+  for(int i = 0; i < num_leds; i++)
+  {
+    led[i] = colour;
+    led[i] %= ledBrightness;
+  }
+}
+
+void setColourAllRows(CRGB ledArray[][NUM_LEDS], int num_rows, int num_leds, CRGB::HTMLColorCode colour)
+{
+  for(int i = 0; i < num_rows; i++)
+  {
+    setColorRow(ledArray[i], num_leds, colour);
+  }
+}
+
+void fadeLightBy(CRGB *led, int num_leds, int percentage)
+{
+  for(int i = 0; i < num_leds; i++)
+  {
+    led[i] %= percentage;
+  }
+}
+
+void fadeAllLightBy(CRGB ledArray[][NUM_LEDS], int num_rows, int num_leds, int percentage)
+{
+  for(int i = 0; i < num_rows; i++)
+  {
+    fadeLightBy(ledArray[i], num_leds, percentage);
+  }
+}
+
+
+void allLedsOff(CRGB ledArray[][NUM_LEDS], int num_rows, int num_leds)
+{
+  for(int i=0; i < num_rows; i++)
+  {
+    setColorRow(ledArray[i], num_leds, CRGB::Black);
+  }
+  FastLED.show();
+}
+
+void allLedsOn(CRGB ledArray[][NUM_LEDS], int num_rows, int num_leds)
+{
+  for(int i=0; i < num_rows; i++)
+  {
+    setColorRow(ledArray[i], num_leds, currentColour);
+  }
+  FastLED.show();
+}
+
+
+void setup()
+{
+  Serial.begin(115200);
+  FastLED.addLeds<NEOPIXEL, STRIP_0_PIN>(ledArray[0], NUM_LEDS);
+  FastLED.addLeds<NEOPIXEL, STRIP_1_PIN>(ledArray[1], NUM_LEDS);
+  FastLED.addLeds<NEOPIXEL, STRIP_2_PIN>(ledArray[2], NUM_LEDS);
+  FastLED.addLeds<NEOPIXEL, STRIP_3_PIN>(ledArray[3], NUM_LEDS);
+  FastLED.addLeds<NEOPIXEL, STRIP_4_PIN>(ledArray[4], NUM_LEDS);
+
+  // digitalWrite(RED_BUTTON, HIGH);
+  pinMode(RED_BUTTON, INPUT_PULLUP);
+  // attachInterrupt(RED_BUTTON, redPushedInt, LOW);
+
+  // digitalWrite(BLUE_BUTTON, HIGH);
+  pinMode(BLUE_BUTTON, INPUT_PULLUP);
+  // attachInterrupt(BLUE_BUTTON, bluePushedInt, LOW);
+
+  currentColour = CRGB::Green;
+  allLedsOn(ledArray, 5, NUM_LEDS);
+  delay(300);
+  allLedsOff(ledArray, 5, NUM_LEDS);
+  delay(300);
+  allLedsOn(ledArray, 5, NUM_LEDS);
+  delay(300);
+  allLedsOff(ledArray, 5, NUM_LEDS);
+  randomSeed(analogRead(0));
+  Serial.println("End setup");
+}
+
+void lightLedAccordingToState(boolean currentState)
+{
+  if (currentState)
+  {
+    FastLED.showColor(currentColour, ledBrightness);
+  }
+  else
+  {
+    FastLED.showColor(CRGB::Black);
+  }
+}
+CRGB::HTMLColorCode pallet[] {CRGB::SkyBlue, CRGB::Blue, CRGB::DarkSlateBlue,
+  CRGB::DarkGreen, CRGB::Yellow, CRGB::DarkOrange, CRGB::Red,
+  CRGB::DarkRed, CRGB::Magenta, CRGB::White};
+
+void colourMode(CRGB ledArray[][NUM_LEDS], int num_rows)
+{
+  allLedsOff(ledArray, num_rows, NUM_LEDS);
+  int selected = 0;
+  for(int i=0; i < 10; i++)
+  {
+    ledArray[OPTIONS_STRIP][i] = pallet[i];
+    if (currentColour != pallet[i]) { ledArray[OPTIONS_STRIP][i] %= 25; }
+    else { selected = i; }
+  }
+  FastLED.show();
+  redPushed = false;
+  bluePushed = false;
+  Serial.println("Enter colourMode");
+  while(!redPushed)
+  {
+    readButtons();
+    if(bluePushed)
+    {
+      ledArray[OPTIONS_STRIP][selected].maximizeBrightness();
+      ledArray[OPTIONS_STRIP][selected] %=25;
+      selected = selected == 9? 0: selected+1;
+      ledArray[OPTIONS_STRIP][selected].maximizeBrightness();
+      FastLED.show();
+      bluePushed = false;
+    }
+    currentColour = pallet[selected];
+  }
+  lightLedAccordingToState(ledState);
+  Serial.println("Exit colourMode");
+}
+
+void brightnessMode(CRGB ledArray[][NUM_LEDS], int num_rows)
+{
+  int lvl = ledBrightness/25;
+  int i = 0;
+  allLedsOff(ledArray, 5, NUM_LEDS);
+  // FastLED.showColor(CRGB::Black);
+  for(; i < lvl; i++)
+  {
+    ledArray[OPTIONS_STRIP][i] = currentColour;
+    ledArray[OPTIONS_STRIP][i] %= ledBrightness;
+  }
+  FastLED.show();
+  redPushed = false;
+  bluePushed = false;
+  while(!redPushed)
+  {
+    readButtons();
+    if (bluePushed)
+    {
+      lvl = lvl < 10? lvl+1: 1;
+      int i = 0;
+      for(; i < lvl; i++)
+      {
+        ledArray[OPTIONS_STRIP][i] = currentColour;
+        ledArray[OPTIONS_STRIP][i] %= lvl*25;
+      }
+      for(; i < 10; i++)
+      {
+        ledArray[OPTIONS_STRIP][i] = CRGB::Black;
+      }
+      FastLED.show();
+      bluePushed = false;
+    }
+  }
+  ledBrightness = lvl*25;
+}
+
+CRGB::HTMLColorCode discoPallets[] {CRGB::Blue, CRGB::DarkSlateBlue,
+  CRGB::DarkGreen, CRGB::Yellow, CRGB::DarkOrange, CRGB::Red, CRGB::Magenta};
+
+int discoPatterns[][NUM_LEDS] = {
+  {0,1,2,3,4,5,6,0,1,2},
+  {1,0,3,4,1,4,5,0,2,5},
+  {0,3,4,3,2,5,6,2,1,1},
+  {3,4,2,0,4,2,6,0,1,2},
+  {4,1,2,3,0,5,2,1,1,3},
+
+  {5,6,2,3,4,0,1,2,3,4},
+  {6,1,5,3,4,1,0,3,2,2},
+  {0,5,2,3,1,5,3,0,1,2},
+  {6,1,2,4,4,3,4,5,0,2},
+  {0,2,1,3,3,4,6,0,1,0},
+};
+void discoMode()
+{
+  int line = 0;
+  uint32_t point = millis();
+  uint32_t speed = 200;
+  redPushed  = false;
+  bluePushed = false;
+  redFirst = false;
+  while(!redPushed)
+  {
+    readButtons();
+    if (bluePushed)
+    {
+      speed = speed > 450? 50: speed +50;
+      bluePushed = false;
+    }
+    if((millis() - point) > speed)
+    {
+      for(int i = 0; i < 5; i++)
+      {
+        line = random(0,7);
+        for(int j=0; j < NUM_LEDS; j++)
+        {
+          ledArray[i][j] = discoPallets[discoPatterns[line][j]];
+        }
+      }
+      point = millis();
+      FastLED.show();
+    }
+    bluePushed  = false;
+
+  }
+  redFirst = false;
+  redPushed  = false;
+  bluePushed = false;
+}
+
+void loop()
+{
+  readButtons();
+  if (redPushed && bluePushed)
+  {
+    redPushed = false;
+    bluePushed = false;
+    if (redFirst)
+    {
+      brightnessMode(ledArray, 5);
+    }
+    else
+    {
+      redPushed = false;
+      discoMode();
+    }
+    lightLedAccordingToState(ledState);
+
+    redPushed = false;
+    bluePushed = false;
+    redFirst = false;
+  }
+  else if (redPushed)
+  {
+    colourMode(ledArray, 5);
+    redPushed = false;
+    bluePushed = false;
+  }
+  else if (bluePushed)
+  {
+    ledState = !ledState;
+    lightLedAccordingToState(ledState);
+    bluePushed = false;
+  }
+
 }
